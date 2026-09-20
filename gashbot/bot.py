@@ -50,14 +50,14 @@ class FakeTelegramTransport:
         self.answered.append(callback_id)
 
 
-def _webapp_button(label: str, startapp: str, bot_username: str) -> dict[str, str]:
-    """Deep link button: official syntax https://t.me/<bot>?startapp=<slug> opens the Mini App
-    on the mapped route. Slug is validated (untrusted input rule)."""
-    if not _STARTAPP_SLUG_RE.fullmatch(startapp):
-        raise ValueError("invalid startapp slug")
-    if not re.fullmatch(r"[A-Za-z0-9_]{4,32}", bot_username):
-        raise ValueError("invalid bot username")
-    return {"text": label, "url": f"https://t.me/{bot_username}?startapp={startapp}"}
+def _webapp_button(label: str, route: str, webapp_base: str) -> dict[str, str]:
+    """InlineKeyboardButton.web_app with DIRECT HTTPS URL (no Main Mini App dependency).
+    Requires webapp_base to be a verified HTTPS origin. Route is validated."""
+    if not _STARTAPP_SLUG_RE.fullmatch(route):
+        raise ValueError("invalid route slug")
+    if not webapp_base.startswith("https://"):
+        raise ValueError("webapp base must be https")
+    return {"text": label, "web_app": {"url": f"{webapp_base.rstrip('/')}/{route}"}}
 
 
 def _url_button(label: str, url: str) -> dict[str, str]:
@@ -69,7 +69,7 @@ def _url_button(label: str, url: str) -> dict[str, str]:
 @dataclass(slots=True)
 class BotConfig:
     webapp_url: str  # https base of the shared Next.js Mini App
-    bot_username: str  # without @; buttons deep-link to t.me/<username>?startapp=<slug>
+    bot_username: str = ""  # only needed for t.me deep links (external/shareable)
     support_url: str = "https://t.me/"  # configured via env later
 
 
@@ -94,11 +94,11 @@ class GashBot:
         self._cfg = config
 
     def _menu_buttons(self) -> list[list[dict[str, str]]]:
-        u = self._cfg.bot_username
+        b = self._cfg.webapp_url
         return [
-            [_webapp_button("Open Gash", "home", u)],
-            [_webapp_button("Store", "store", u), _webapp_button("VPN", "vpn", u)],
-            [_webapp_button("Orders", "orders", u), _url_button("Support", self._cfg.support_url)],
+            [_webapp_button("Open Gash", "home", b)],
+            [_webapp_button("Store", "store", b), _webapp_button("VPN", "vpn", b)],
+            [_webapp_button("Orders", "orders", b), _url_button("Support", self._cfg.support_url)],
         ]
 
     # ── /start ───────────────────────────────────────────────────────────
@@ -119,14 +119,16 @@ class GashBot:
                 price = variant.get("price_minor", 0) / 100
                 lines.append(f"• {item['title']} — {variant['title']} — {price:.0f} ₽")
         lines.append("\nOpen the app to buy:")
-        buttons.append([_webapp_button("Open Store", "store", self._cfg.bot_username)])
+        buttons.append([_webapp_button("Open Store", "store", self._cfg.webapp_url)])
         await self._t.send_message(user.chat_id, "\n".join(lines), buttons)
 
     # ── /orders (quick status, deep link to app) ────────────────────────
     async def handle_orders(self, user: BotUser, last_order_id: str | None) -> None:
         if not last_order_id:
             await self._t.send_message(
-                user.chat_id, "No orders yet.", [[_webapp_button("Open Store", "store", self._cfg.bot_username)]]
+                user.chat_id,
+                "No orders yet.",
+                [[_webapp_button("Open Store", "store", self._cfg.webapp_url)]],
             )
             return
         try:
@@ -137,5 +139,5 @@ class GashBot:
             return
         text = f"Order {order['id'][:8]}… — {order['status']} — {order['total_minor'] / 100:.0f} ₽"
         await self._t.send_message(
-            user.chat_id, text, [[_webapp_button("Open Orders", "orders", self._cfg.bot_username)]]
+            user.chat_id, text, [[_webapp_button("Open Orders", "orders", self._cfg.webapp_url)]]
         )

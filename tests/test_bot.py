@@ -37,7 +37,7 @@ class FakeCore(GashCoreClient):
 
 def _bot() -> tuple[GashBot, FakeTelegramTransport]:
     t = FakeTelegramTransport()
-    cfg = BotConfig(webapp_url="https://dev-app.example", bot_username="GashDevBot")
+    cfg = BotConfig(webapp_url="https://dev-app.example")
     return GashBot(t, FakeCore(), cfg), t
 
 
@@ -47,10 +47,10 @@ def test_start_menu_renders_startapp_deeplinks() -> None:
     asyncio.run(bot.handle_start(user))
     assert "Gash's Lair" in t.sent[0].text
     flat = [b for row in t.sent[0].buttons for b in row]
-    by_text = {b["text"]: b["url"] for b in flat}
-    assert by_text["Open Gash"] == "https://t.me/GashDevBot?startapp=home"
-    assert by_text["Store"].endswith("?startapp=store")
-    assert by_text["Support"].startswith("https://")
+    by_text = {b["text"]: b for b in flat}
+    assert by_text["Open Gash"]["web_app"]["url"] == "https://dev-app.example/home"
+    assert by_text["Store"]["web_app"]["url"] == "https://dev-app.example/store"
+    assert by_text["Support"]["url"].startswith("https://")
 
 
 def test_store_lists_same_catalog() -> None:
@@ -76,12 +76,14 @@ def test_orders_respects_ownership() -> None:
     assert "unavailable" in t.sent[-1].text  # second send in this test
 
 
-def test_startapp_slug_validation() -> None:
-    from gashbot.bot import _webapp_button
+def test_route_and_url_validation() -> None:
+    from gashbot.bot import _url_button, _webapp_button
 
     with pytest.raises(ValueError):
-        _webapp_button("x", "../evil", "GashDevBot")
+        _webapp_button("x", "../evil", "https://dev-app.example")
     with pytest.raises(ValueError):
-        _webapp_button("x", "a" * 100, "GashDevBot")
+        _webapp_button("x", "a" * 100, "https://dev-app.example")
     with pytest.raises(ValueError):
-        _webapp_button("x", "home", "bad username with spaces")
+        _webapp_button("x", "home", "http://insecure.example")  # https only
+    with pytest.raises(ValueError):
+        _url_button("x", "http://insecure.example")
