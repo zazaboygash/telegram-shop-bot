@@ -18,6 +18,17 @@ from gashbot.gash_client import GashCoreClient, GashCoreError
 
 _STARTAPP_SLUG_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 
+# CANONICAL ROUTE CONTRACT — must mirror the actual Next.js app tree (single source of truth
+# shared by bot buttons and notifications; do not invent slugs that don't exist in the frontend).
+ROUTES: dict[str, str] = {
+    "home": "/",            # canonical Home is "/", NOT /home
+    "store": "/store",
+    "vpn": "/vpn",
+    "orders": "/orders",
+    "authenticator": "/authenticator",
+    "profile": "/profile",
+}
+
 
 class TelegramTransport(Protocol):
     """Minimal surface the bot needs from a Telegram transport."""
@@ -50,14 +61,14 @@ class FakeTelegramTransport:
         self.answered.append(callback_id)
 
 
-def _webapp_button(label: str, route: str, webapp_base: str) -> dict[str, str]:
+def _webapp_button(label: str, route_key: str, webapp_base: str) -> dict[str, str]:
     """InlineKeyboardButton.web_app with DIRECT HTTPS URL (no Main Mini App dependency).
-    Requires webapp_base to be a verified HTTPS origin. Route is validated."""
-    if not _STARTAPP_SLUG_RE.fullmatch(route):
-        raise ValueError("invalid route slug")
+    Route keys must exist in ROUTES contract (drift-proof against frontend changes)."""
+    if route_key not in ROUTES:
+        raise ValueError(f"unknown route key: {route_key}")
     if not webapp_base.startswith("https://"):
         raise ValueError("webapp base must be https")
-    return {"text": label, "web_app": {"url": f"{webapp_base.rstrip('/')}/{route}"}}
+    return {"text": label, "web_app": {"url": f"{webapp_base.rstrip('/')}{ROUTES[route_key]}"}}
 
 
 def _url_button(label: str, url: str) -> dict[str, str]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 
 import pytest
 
@@ -48,9 +49,24 @@ def test_start_menu_renders_startapp_deeplinks() -> None:
     assert "Gash's Lair" in t.sent[0].text
     flat = [b for row in t.sent[0].buttons for b in row]
     by_text = {b["text"]: b for b in flat}
-    assert by_text["Open Gash"]["web_app"]["url"] == "https://dev-app.example/home"
+    assert by_text["Open Gash"]["web_app"]["url"] == "https://dev-app.example/"  # canonical Home
     assert by_text["Store"]["web_app"]["url"] == "https://dev-app.example/store"
     assert by_text["Support"]["url"].startswith("https://")
+
+
+def test_route_contract_matches_frontend() -> None:
+    """Route drift guard: every bot route key maps to an EXISTING frontend page."""
+    from gashbot.bot import ROUTES
+
+    app_dir = pathlib.Path(__file__).resolve().parents[3] / "gash-ecosystem" / "apps" / "web" / "app"
+    if not app_dir.exists():
+        pytest.skip("frontend tree not available in this environment")
+    for key, route in ROUTES.items():
+        target = app_dir / route.strip("/")
+        if route == "/":
+            assert (app_dir / "page.tsx").exists(), "Home page missing"
+        else:
+            assert (target / "page.tsx").exists(), f"route {route} (key={key}) has no page.tsx"
 
 
 def test_store_lists_same_catalog() -> None:
