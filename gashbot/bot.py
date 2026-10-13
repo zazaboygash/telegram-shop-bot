@@ -133,6 +133,32 @@ class GashBot:
         buttons.append([_webapp_button("Open Store", "store", self._cfg.webapp_url)])
         await self._t.send_message(user.chat_id, "\n".join(lines), buttons)
 
+    # ── account and shop actions (all state remains in Core) ────────────
+    async def authenticate(self, init_data: str, *, chat_id: int = 0) -> BotUser:
+        """Exchange initData with Core; never parse or trust Telegram identity locally."""
+        session = await self._core.telegram_session(init_data)
+        return BotUser(chat_id=chat_id, gash_token=session["token"], display_name=session.get("display_name", "Gash user"))
+
+    async def handle_balance(self, user: BotUser) -> None:
+        wallet = await self._core.get_wallet(user.gash_token)
+        if not wallet:
+            await self._t.send_message(user.chat_id, "No wallet is available yet.", [[_webapp_button("Open profile", "profile", self._cfg.webapp_url)]])
+            return
+        amount = wallet.get("balance_minor", 0) / 100
+        await self._t.send_message(user.chat_id, f"Balance: {amount:.2f} {wallet.get('currency', 'RUB')}", [[_webapp_button("Top up", "profile", self._cfg.webapp_url)]])
+
+    async def handle_topup(self, user: BotUser, amount_minor: int, idempotency_key: str) -> None:
+        payment = await self._core.create_topup(user.gash_token, amount_minor, idempotency_key=idempotency_key)
+        pay_url = payment.get("pay_url")
+        buttons = [[_url_button("Pay", pay_url)]] if pay_url else [[_webapp_button("Open profile", "profile", self._cfg.webapp_url)]]
+        await self._t.send_message(user.chat_id, f"Top-up created: {amount_minor / 100:.2f} {payment.get('currency', 'RUB')}", buttons)
+
+    async def handle_checkout(self, user: BotUser, wallet_id: str, variant_id: str, qty: int, idempotency_key: str) -> str:
+        result = await self._core.create_order_idempotent(user.gash_token, wallet_id=wallet_id, variant_id=variant_id, qty=qty, idempotency_key=idempotency_key)
+        order_id = str(result["order_id"])
+        await self._t.send_message(user.chat_id, f"Order created: {order_id[:8]}…", [[_webapp_button("View order", "orders", self._cfg.webapp_url)]])
+        return order_id
+
     # ── /orders (quick status, deep link to app) ────────────────────────
     async def handle_orders(self, user: BotUser, last_order_id: str | None) -> None:
         if not last_order_id:
