@@ -318,8 +318,9 @@ class GashBot:
         if not last_order_id:
             await self._t.send_message(
                 user.chat_id,
-                "No orders yet.",
-                [[_webapp_button("Open Store", "store", self._cfg.webapp_url)]],
+                "Your orders and delivery statuses are available in the secure Gash Mini App.",
+                [[_webapp_button("Open Orders", "orders", self._cfg.webapp_url)],
+                 [_webapp_button("Open Store", "store", self._cfg.webapp_url)]],
             )
             return
         try:

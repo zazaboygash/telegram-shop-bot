@@ -70,7 +70,12 @@ async def main() -> None:
             text = (msg.get("text") or "").split("@")[0]  # strip @bot suffix
             # BotUser requires a gash session; for menu-only commands a placeholder is
             # fine because handlers never call user-scoped APIs with it unless needed.
-            user = BotUser(chat_id=chat_id, gash_token="", display_name=msg["from"].get("first_name", ""))
+            user = BotUser(
+                chat_id=chat_id,
+                gash_token="",
+                display_name=msg["from"].get("first_name", ""),
+                language_code=msg["from"].get("language_code", "en"),
+            )
             try:
                 if text == "/start":
                     await bot.handle_start(user)
