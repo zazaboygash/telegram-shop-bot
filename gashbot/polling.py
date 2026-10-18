@@ -13,11 +13,20 @@ from typing import Any
 
 import httpx
 
-from gashbot.bot import BotConfig, BotUser, GashBot
+from gashbot.bot import BotConfig, BotUser, GashBot, _webapp_button
 from gashbot.gash_client import GashCoreClient, GashCoreConfig
 from gashbot.transport_real import RealTelegramTransport
 
 API = "https://api.telegram.org"
+BOT_COMMANDS = [
+    {"command": "start", "description": "Open Gash menu"},
+    {"command": "vpn_codes", "description": "VPN promo and balance codes"},
+    {"command": "store", "description": "Browse Core catalog"},
+    {"command": "accounts", "description": "Browse account products"},
+    {"command": "profile", "description": "Open profile and balance"},
+    {"command": "orders", "description": "Open my orders"},
+    {"command": "help", "description": "Show help and delivery"},
+]
 
 
 async def _call(bot_token: str, method: str, **payload: Any) -> dict[str, Any]:
@@ -37,6 +46,7 @@ async def main() -> None:
 
     me = await _call(bot_token, "getMe")
     username: str = me["username"]
+    await _call(bot_token, "setMyCommands", commands=BOT_COMMANDS)
 
     transport = RealTelegramTransport(bot_token)
     core = GashCoreClient(GashCoreConfig(base_url=core_url))
@@ -66,16 +76,24 @@ async def main() -> None:
                     await bot.handle_start(user)
                 elif text == "/store":
                     await bot.handle_store(user)
+                elif text in {"/vpn", "/vpn_codes", "/promocodes", "/promo", "/коды", "/промокоды"}:
+                    await bot.handle_vpn_codes(chat_id)
                 elif text in {"/profile", "/balance"}:
                     await bot.handle_profile(chat_id)
                 elif text in {"/accounts", "/аккаунты", "/account"}:
                     await bot.handle_accounts(chat_id)
                 elif text == "/orders":
                     await bot.handle_orders(user, None)
+                elif text in {"/help", "/помощь"}:
+                    await transport.send_message(
+                        chat_id,
+                        "Команды: /start · /store · /vpn_codes · /accounts · /profile · /balance · /orders.\nVPN codes are bought in the Gash Mini App and delivered in the Core order details after fulfillment.",
+                        [[_webapp_button("Open Mini App", "vpn", webapp_url)]],
+                    )
                 else:
                     await transport.send_message(
                         chat_id,
-                        "Команды: /start · /store · /accounts · /profile · /orders — или откройте Gash.",
+                        "Команды: /start · /store · /vpn_codes · /accounts · /profile · /orders — или откройте Gash.",
                     )
             except Exception as exc:  # noqa: BLE001
                 print("handler error:", exc, flush=True)

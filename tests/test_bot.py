@@ -23,8 +23,24 @@ class FakeCore(GashCoreClient):
             {
                 "slug": "gash-test-product",
                 "title": "Gash Test Product",
-                "variants": [{"sku": "gtp-1", "title": "Standard license", "price_minor": 39900}],
-            }
+                "kind": "LICENSE",
+                "variants": [{"sku": "gtp-1", "title": "Standard license", "price_minor": 39900, "currency": "RUB"}],
+            },
+            {
+                "slug": "vpn-promo-codes",
+                "title": "VPN promo codes",
+                "kind": "FILE",
+                "description": "External VPN promo code delivery",
+                # Deliberately sensitive fulfillment-like field: UX must ignore it.
+                "code": "VPN-SECRET-DO-NOT-RENDER",
+                "variants": [
+                    {"sku": "vpn-1m", "title": "VPN promo code — 1 month", "price_minor": 1000, "currency": "RUB"},
+                    {"sku": "vpn-3m", "title": "VPN promo code — 3 months", "price_minor": 2000, "currency": "RUB"},
+                    {"sku": "vpn-6m", "title": "VPN promo code — 6 months", "price_minor": 3000, "currency": "RUB"},
+                    {"sku": "vpn-12m", "title": "VPN promo code — 12 months", "price_minor": 4000, "currency": "RUB"},
+                    {"sku": "vpn-balance", "title": "VPN balance code", "price_minor": 5000, "currency": "RUB"},
+                ],
+            },
         ]
 
     async def get_order(self, token: str, order_id: str) -> dict:
@@ -67,6 +83,35 @@ def test_route_contract_matches_frontend() -> None:
             assert (app_dir / "page.tsx").exists(), "Home page missing"
         else:
             assert (target / "page.tsx").exists(), f"route {route} (key={key}) has no page.tsx"
+
+
+def test_vpn_codes_group_core_catalog_and_never_render_delivery_code() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_vpn_codes(1))
+    text = t.sent[-1].text
+    for duration in ("1 month", "3 month", "6 month", "12 month"):
+        assert duration in text
+    assert "Balance codes" in text
+    assert "VPN-SECRET" not in text
+    assert "Mini App" in text
+    assert "/vpn" in str(t.sent[-1].buttons)
+
+
+def test_vpn_codes_show_core_price_and_not_unknown_placeholder_price() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_vpn_codes(1))
+    text = t.sent[-1].text
+    assert "10.00 RUB" in text
+    assert "20.00 RUB" in text
+    assert "50.00 RUB" in text
+    assert "999" not in text
+
+
+def test_store_does_not_expose_code_like_catalog_secret() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_store(BotUser(chat_id=1, gash_token="tok", display_name="D")))
+    assert "VPN-SECRET" not in t.sent[-1].text
+    assert "The bot never displays a code" in t.sent[-1].text
 
 
 def test_profile_button_opens_shared_app() -> None:

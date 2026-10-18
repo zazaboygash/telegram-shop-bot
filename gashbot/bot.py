@@ -10,8 +10,9 @@ bot token is provisioned in the fork's .env (TELEGRAM_BOT_TOKEN, never committed
 
 from __future__ import annotations
 
+import html
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from gashbot.gash_client import GashCoreClient, GashCoreError
@@ -77,6 +78,43 @@ def _url_button(label: str, url: str) -> dict[str, str]:
     return {"text": label, "url": url}
 
 
+_DURATION_RE = re.compile(r"(?<!\d)(1|3|6|12)\s*(?:month|months|месяц|месяца|месяцев|мес)", re.IGNORECASE)
+_CODE_RE = re.compile(r"promo|voucher|code|код|промокод|ваучер", re.IGNORECASE)
+_BALANCE_RE = re.compile(r"balance|баланс|top[-_ ]?up|пополн", re.IGNORECASE)
+
+
+def _catalog_text(product: dict[str, Any], variant: dict[str, Any] | None = None) -> str:
+    """Build matching text without reading stock, secrets, or fulfillment payloads."""
+    values = [product.get("title"), product.get("slug"), product.get("description"), product.get("kind")]
+    if variant:
+        values.extend((variant.get("title"), variant.get("sku")))
+    return " ".join(str(value) for value in values if value is not None)
+
+
+def _duration_for(product: dict[str, Any], variant: dict[str, Any]) -> str | None:
+    match = _DURATION_RE.search(_catalog_text(product, variant))
+    return match.group(1) if match else None
+
+
+def _is_balance_product(product: dict[str, Any], variant: dict[str, Any]) -> bool:
+    return bool(_BALANCE_RE.search(_catalog_text(product, variant)))
+
+
+def _is_code_product(product: dict[str, Any], variant: dict[str, Any]) -> bool:
+    text = _catalog_text(product, variant)
+    return bool(_CODE_RE.search(text)) or (_duration_for(product, variant) is not None and "vpn" in text.lower())
+
+
+def _variant_label(product: dict[str, Any], variant: dict[str, Any]) -> str:
+    """Render only catalog-owned display fields; never print a delivered code."""
+    title = html.escape(str(variant.get("title") or product.get("title") or "VPN code"))
+    price_minor = variant.get("price_minor")
+    currency = str(variant.get("currency") or "").strip()
+    if isinstance(price_minor, int) and currency:
+        return f"• {title} — {price_minor / 100:.2f} {html.escape(currency)}"
+    return f"• {title} — price shown in Gash Mini App"
+
+
 @dataclass(slots=True)
 class BotConfig:
     webapp_url: str  # https base of the shared Next.js Mini App
@@ -108,7 +146,7 @@ class GashBot:
         b = self._cfg.webapp_url
         return [
             [_webapp_button("Open Gash", "home", b)],
-            [_webapp_button("Store", "store", b), _webapp_button("VPN", "vpn", b)],
+            [_webapp_button("Store", "store", b), _webapp_button("VPN codes", "vpn", b)],
             [_webapp_button("Orders", "orders", b), _webapp_button("Profile", "profile", b)],
             [_url_button("Support", self._cfg.support_url)],
         ]
@@ -124,15 +162,53 @@ class GashBot:
     # ── /store (thin catalog listing, Mini App is the real UI) ──────────
     async def handle_store(self, user: BotUser) -> None:
         products = await self._core.list_products()
-        lines: list[str] = ["Store — same catalog as the app:\n"]
-        buttons: list[list[dict[str, str]]] = []
-        for item in products[:8]:
-            for variant in item.get("variants", [])[:1]:
-                price = variant.get("price_minor", 0) / 100
-                lines.append(f"• {item['title']} — {variant['title']} — {price:.0f} ₽")
-        lines.append("\nOpen the app to buy:")
-        buttons.append([_webapp_button("Open Store", "store", self._cfg.webapp_url)])
-        await self._t.send_message(user.chat_id, "\n".join(lines), buttons)
+        lines: list[str] = ["Gash catalog — prices come from Core:\n"]
+        for product in products[:8]:
+            variants = [v for v in product.get("variants", []) if v.get("active", True)]
+            if not variants:
+                continue
+            lines.append(f"<b>{html.escape(str(product.get('title') or product.get('slug') or 'Product'))}</b>")
+            lines.extend(_variant_label(product, variant) for variant in variants[:8])
+        lines.extend(("", "VPN promo-code products may include 1/3/6/12 months and balance codes when configured.", "Delivery: Core order → Gash Mini App / order details. The bot never displays a code."))
+        await self._t.send_message(
+            user.chat_id,
+            "\n".join(lines),
+            [[_webapp_button("Open Store", "store", self._cfg.webapp_url)], [_webapp_button("VPN codes", "vpn", self._cfg.webapp_url)]],
+        )
+
+    async def handle_vpn_codes(self, chat_id: int) -> None:
+        """Present Core-configured VPN code variants, without inventing prices or inventory."""
+        products = await self._core.list_products()
+        grouped: dict[str, list[str]] = {duration: [] for duration in ("1", "3", "6", "12")}
+        balance: list[str] = []
+        other: list[str] = []
+        for product in products:
+            for variant in product.get("variants", []):
+                if not variant.get("active", True) or not (_is_code_product(product, variant) or _is_balance_product(product, variant)):
+                    continue
+                label = _variant_label(product, variant)
+                duration = _duration_for(product, variant)
+                if _is_balance_product(product, variant):
+                    balance.append(label)
+                elif duration in grouped:
+                    grouped[duration].append(label)
+                else:
+                    other.append(label)
+
+        lines = ["<b>VPN promo codes</b>", "Choose a Core catalog product below. Prices are live from Core; no code is shown before delivery.", ""]
+        for duration in ("1", "3", "6", "12"):
+            lines.append(f"<b>{duration} month</b>")
+            lines.extend(grouped[duration] or ["• Not currently listed in Core"])
+        lines.append("<b>Balance codes</b>")
+        lines.extend(balance or ["• Not currently listed in Core"])
+        if other:
+            lines.extend(("<b>Other Core-configured code products</b>", *other))
+        lines.extend(("", "Delivery: place an order in Gash Mini App, then open the order details for instructions, bot link, and code after fulfillment."))
+        await self._t.send_message(
+            chat_id,
+            "\n".join(lines),
+            [[_webapp_button("Buy in Mini App", "vpn", self._cfg.webapp_url)], [_webapp_button("My orders", "orders", self._cfg.webapp_url)]],
+        )
 
     # ── account and shop actions (all state remains in Core) ────────────
     async def authenticate(self, init_data: str, *, chat_id: int = 0) -> BotUser:
