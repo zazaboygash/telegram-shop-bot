@@ -24,7 +24,7 @@ class FakeCore(GashCoreClient):
                 "slug": "gash-test-product",
                 "title": "Gash Test Product",
                 "kind": "LICENSE",
-                "variants": [{"sku": "gtp-1", "title": "Standard license", "price_minor": 39900, "currency": "RUB"}],
+                "variants": [{"id": "gtp-1", "sku": "gtp-1", "title": "Standard license", "price_minor": 39900, "currency": "RUB"}],
             },
             {
                 "slug": "vpn-promo-codes",
@@ -34,11 +34,11 @@ class FakeCore(GashCoreClient):
                 # Deliberately sensitive fulfillment-like field: UX must ignore it.
                 "code": "VPN-SECRET-DO-NOT-RENDER",
                 "variants": [
-                    {"sku": "vpn-1m", "title": "VPN promo code — 1 month", "price_minor": 1000, "currency": "RUB"},
-                    {"sku": "vpn-3m", "title": "VPN promo code — 3 months", "price_minor": 2000, "currency": "RUB"},
-                    {"sku": "vpn-6m", "title": "VPN promo code — 6 months", "price_minor": 3000, "currency": "RUB"},
-                    {"sku": "vpn-12m", "title": "VPN promo code — 12 months", "price_minor": 4000, "currency": "RUB"},
-                    {"sku": "vpn-balance", "title": "VPN balance code", "price_minor": 5000, "currency": "RUB"},
+                    {"id": "vpn-1m", "sku": "vpn-1m", "title": "VPN promo code — 1 month", "price_minor": 1000, "currency": "RUB"},
+                    {"id": "vpn-3m", "sku": "vpn-3m", "title": "VPN promo code — 3 months", "price_minor": 2000, "currency": "RUB"},
+                    {"id": "vpn-6m", "sku": "vpn-6m", "title": "VPN promo code — 6 months", "price_minor": 3000, "currency": "RUB"},
+                    {"id": "vpn-12m", "sku": "vpn-12m", "title": "VPN promo code — 12 months", "price_minor": 4000, "currency": "RUB"},
+                    {"id": "vpn-balance", "sku": "vpn-balance", "title": "VPN balance code", "price_minor": 5000, "currency": "RUB"},
                 ],
             },
         ]
@@ -111,7 +111,7 @@ def test_store_does_not_expose_code_like_catalog_secret() -> None:
     bot, t = _bot()
     asyncio.run(bot.handle_store(BotUser(chat_id=1, gash_token="tok", display_name="D")))
     assert "VPN-SECRET" not in t.sent[-1].text
-    assert "The bot never displays a code" in t.sent[-1].text
+    assert "never accepts payment or delivers codes" in t.sent[-1].text
 
 
 def test_profile_button_opens_shared_app() -> None:
@@ -125,7 +125,7 @@ def test_store_lists_same_catalog() -> None:
     bot, t = _bot()
     user = BotUser(chat_id=1, gash_token="tok", display_name="D")
     asyncio.run(bot.handle_store(user))
-    assert "Gash Test Product" in t.sent[0].text
+    assert "Standard license" in t.sent[0].text
     assert "399" in t.sent[0].text
 
 
@@ -155,3 +155,74 @@ def test_route_and_url_validation() -> None:
         _webapp_button("x", "home", "http://insecure.example")  # https only
     with pytest.raises(ValueError):
         _url_button("x", "http://insecure.example")
+
+
+def test_store_renders_categories_and_variant_mini_app_buy_buttons() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_store(BotUser(chat_id=1, gash_token="tok", display_name="D")))
+
+    sent = t.sent[-1]
+    assert "Accounts" in sent.text
+    assert "Digital goods" in sent.text
+    assert "Standard license" in sent.text
+    buy_buttons = [button for row in sent.buttons for button in row if button["text"].startswith("Buy")]
+    assert len(buy_buttons) == 6
+    assert all(button["web_app"]["url"].startswith("https://dev-app.example/store?") for button in buy_buttons)
+    assert all("variant=" in button["web_app"]["url"] for button in buy_buttons)
+
+
+def test_store_adds_safe_telegram_mini_app_deep_links_per_product() -> None:
+    bot, t = GashBot(
+        FakeTelegramTransport(),
+        FakeCore(),
+        BotConfig(webapp_url="https://dev-app.example", bot_username="gash_shop_bot"),
+    ), FakeTelegramTransport()
+    # Use the transport actually owned by the bot.
+    bot._t = t
+    asyncio.run(bot.handle_store(BotUser(chat_id=1, gash_token="tok", display_name="D")))
+    deep_links = [
+        button["url"]
+        for row in t.sent[-1].buttons
+        for button in row
+        if button.get("text") == "Share"
+    ]
+    assert deep_links
+    assert all(url.startswith("https://t.me/gash_shop_bot?") and "startapp=" in url for url in deep_links)
+    assert all("VPN-SECRET" not in url for url in deep_links)
+
+
+def test_store_has_no_direct_payment_action_or_payment_url() -> None:
+    bot, t = _bot()
+    assert not hasattr(bot, "handle_topup")
+    assert not hasattr(bot, "handle_checkout")
+    asyncio.run(bot.handle_store(BotUser(chat_id=1, gash_token="tok", display_name="D")))
+    buttons = [button for row in t.sent[-1].buttons for button in row]
+    assert all("pay" not in button["text"].lower() for button in buttons)
+    assert all("payment" not in str(button).lower() for button in buttons)
+
+
+def test_store_empty_and_core_error_states_are_actionable() -> None:
+    class EmptyCore(FakeCore):
+        async def list_products(self) -> list[dict]:
+            return []
+
+    class ErrorCore(FakeCore):
+        async def list_products(self) -> list[dict]:
+            from gashbot.gash_client import GashCoreError
+
+            raise GashCoreError(503, "CORE_UNAVAILABLE", "catalog unavailable")
+
+    for core, expected in ((EmptyCore(), "No products are available"), (ErrorCore(), "temporarily unavailable")):
+        transport = FakeTelegramTransport()
+        bot = GashBot(transport, core, BotConfig(webapp_url="https://dev-app.example"))
+        asyncio.run(bot.handle_store(BotUser(chat_id=1, gash_token="tok", display_name="D")))
+        assert expected in transport.sent[-1].text
+        assert any("web_app" in button for row in transport.sent[-1].buttons for button in row)
+
+
+def test_start_welcome_uses_telegram_language() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_start(BotUser(chat_id=1, gash_token="tok", display_name="D", language_code="ru")))
+    assert "Добро пожаловать" in t.sent[-1].text
+    asyncio.run(bot.handle_start(BotUser(chat_id=2, gash_token="tok", display_name="D", language_code="en")))
+    assert "Welcome" in t.sent[-1].text

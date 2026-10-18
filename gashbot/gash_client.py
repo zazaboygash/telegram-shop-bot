@@ -74,9 +74,16 @@ class GashCoreClient:
     async def get_product(self, slug: str) -> dict[str, Any] | None:
         return next((item for item in await self.list_products() if item.get("slug") == slug), None)
 
-    async def get_wallet(self, token: str) -> dict[str, Any] | None:
-        data = await self._request("GET", "/api/v1/wallet/mine", token=token)
-        return (data.get("items") or [None])[0]
+    async def list_orders(self, token: str) -> list[dict[str, Any]]:
+        data = await self._request("GET", "/api/v1/orders", token=token)
+        return data.get("items", [])
+
+    async def get_order(self, token: str, order_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/api/v1/orders/{order_id}", token=token)
+
+    async def list_profile(self, token: str) -> dict[str, Any]:
+        """Return the Core-owned profile payload for a future authenticated view."""
+        return await self._request("GET", "/api/v1/users/me", token=token)
 
     async def create_topup(self, token: str, amount_minor: int, *, currency: str = "RUB", idempotency_key: str) -> dict[str, Any]:
         if amount_minor <= 0:
