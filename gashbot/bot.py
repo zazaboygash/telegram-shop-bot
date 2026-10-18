@@ -100,7 +100,10 @@ def _variant_deep_link(label: str, product: dict[str, Any], variant: dict[str, A
     sku = str(variant.get("sku") or "")
     if not _STARTAPP_SLUG_RE.fullmatch(slug) or not _STARTAPP_SLUG_RE.fullmatch(sku):
         return None
-    return _url_button(label, f"https://t.me/{config.bot_username}?{urlencode({'startapp': f'store_{slug}_{sku}'})}")
+    startapp = f"store_{slug}_{sku}"
+    if not _STARTAPP_SLUG_RE.fullmatch(startapp):
+        return None
+    return _url_button(label, f"https://t.me/{config.bot_username}?{urlencode({'startapp': startapp})}")
 
 
 _DURATION_RE = re.compile(r"(?<!\d)(1|3|6|12)\s*(?:month|months|месяц|месяца|месяцев|мес)", re.IGNORECASE)

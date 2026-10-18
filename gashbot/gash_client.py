@@ -81,10 +81,6 @@ class GashCoreClient:
     async def get_order(self, token: str, order_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/api/v1/orders/{order_id}", token=token)
 
-    async def list_profile(self, token: str) -> dict[str, Any]:
-        """Return the Core-owned profile payload for a future authenticated view."""
-        return await self._request("GET", "/api/v1/users/me", token=token)
-
     async def create_topup(self, token: str, amount_minor: int, *, currency: str = "RUB", idempotency_key: str) -> dict[str, Any]:
         if amount_minor <= 0:
             raise ValueError("top-up amount must be positive")
