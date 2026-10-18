@@ -69,6 +69,13 @@ def test_route_contract_matches_frontend() -> None:
             assert (target / "page.tsx").exists(), f"route {route} (key={key}) has no page.tsx"
 
 
+def test_profile_button_opens_shared_app() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_profile(1))
+    assert "Профиль" in t.sent[0].text
+    assert "/profile" in str(t.sent[0].buttons[0][0])
+
+
 def test_store_lists_same_catalog() -> None:
     bot, t = _bot()
     user = BotUser(chat_id=1, gash_token="tok", display_name="D")

@@ -160,6 +160,32 @@ class GashBot:
         await self._t.send_message(user.chat_id, f"Order created: {order_id[:8]}…", [[_webapp_button("View order", "orders", self._cfg.webapp_url)]])
         return order_id
 
+    async def handle_profile(self, chat_id: int) -> None:
+        """Open the shared profile; balances stay in Core and require WebApp auth."""
+        await self._t.send_message(
+            chat_id,
+            "Профиль, баланс и заказы открываются в защищённом Gash Mini App.",
+            [[_webapp_button("Профиль и баланс", "profile", self._cfg.webapp_url)],
+             [_webapp_button("Пополнить баланс", "profile", self._cfg.webapp_url)]],
+        )
+
+    async def handle_accounts(self, chat_id: int) -> None:
+        """Show account products from the Core catalog; credentials never pass through the bot."""
+        products = [p for p in await self._core.list_products() if p.get("kind") == "LICENSE"]
+        lines = ["Аккаунты Gash — актуальные товары из Core:\n"]
+        for product in products[:8]:
+            variants = product.get("variants", [])
+            if variants:
+                variant = variants[0]
+                lines.append(f"• {product.get('title', 'Account')} — {variant.get('title', '')}")
+        if not products:
+            lines.append("Сейчас доступных аккаунтов нет.")
+        await self._t.send_message(
+            chat_id,
+            "\n".join(lines),
+            [[_webapp_button("Открыть магазин", "store", self._cfg.webapp_url)]],
+        )
+
     # ── /orders (quick status, deep link to app) ────────────────────────
     async def handle_orders(self, user: BotUser, last_order_id: str | None) -> None:
         if not last_order_id:

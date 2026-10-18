@@ -66,12 +66,16 @@ async def main() -> None:
                     await bot.handle_start(user)
                 elif text == "/store":
                     await bot.handle_store(user)
+                elif text in {"/profile", "/balance"}:
+                    await bot.handle_profile(chat_id)
+                elif text in {"/accounts", "/аккаунты", "/account"}:
+                    await bot.handle_accounts(chat_id)
                 elif text == "/orders":
                     await bot.handle_orders(user, None)
                 else:
                     await transport.send_message(
                         chat_id,
-                        "Commands: /start · /store · /orders — or open Gash from the menu button.",
+                        "Команды: /start · /store · /accounts · /profile · /orders — или откройте Gash.",
                     )
             except Exception as exc:  # noqa: BLE001
                 print("handler error:", exc, flush=True)
