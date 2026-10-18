@@ -69,7 +69,11 @@ async def main() -> None:
                 callback_data = callback.get("data", "")
                 await transport.answer_callback(callback["id"])
                 if callback_data == "store":
-                    await bot.handle_store(BotUser(chat_id=chat_id, gash_token="", display_name=""))
+                    await bot.handle_store_menu(chat_id)
+                elif callback_data.startswith("cat:"):
+                    await bot.handle_category(chat_id, callback_data.split(":", 1)[1])
+                elif callback_data == "home":
+                    await bot.handle_start(BotUser(chat_id=chat_id, gash_token="", display_name=""))
                 elif callback_data == "profile":
                     await bot.handle_profile(chat_id)
                 elif callback_data == "support":

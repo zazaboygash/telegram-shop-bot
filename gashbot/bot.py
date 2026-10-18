@@ -204,6 +204,36 @@ class GashBot:
             text = "Welcome to Gash's Lair\nVPN · Store · 2FA · Services"
         await self._t.send_message(user.chat_id, text, self._menu_buttons(user.language_code))
 
+    async def handle_store_menu(self, chat_id: int) -> None:
+        """In-chat category screen; Mini App remains a separate top-level action."""
+        try:
+            products = await self._core.list_products()
+        except Exception:
+            await self._send_store_error(chat_id)
+            return
+        kinds = {str(p.get("kind", "OTHER")).upper() for p in products if any(v.get("active", True) for v in p.get("variants", []))}
+        labels = {"LICENSE": "🛍 ChatGPT / Accounts", "VPN_PLAN": "🔐 VPN", "FILE": "📦 Digital goods", "SMS": "📱 SMS", "SUBSCRIPTION": "⭐ Subscriptions"}
+        buttons = [[{"text": labels.get(kind, f"🛒 {kind.title()}"), "callback_data": f"cat:{kind}"}] for kind in sorted(kinds)]
+        buttons.extend(([_webapp_button("🟢 Open Mini App", "store", self._cfg.webapp_url)], [{"text": "↩️ Main menu", "callback_data": "home"}]))
+        await self._t.send_message(chat_id, "<b>Gash Store</b>\n\nВыберите категорию. Внутри будут товары, цены и доступный остаток из Core.", buttons)
+
+    async def handle_category(self, chat_id: int, category: str) -> None:
+        products = await self._core.list_products()
+        selected = [p for p in products if str(p.get("kind", "")).upper() == category and any(v.get("active", True) for v in p.get("variants", []))]
+        if not selected:
+            await self._t.send_message(chat_id, "В этой категории пока нет доступных товаров.", [[{"text": "↩️ Категории", "callback_data": "store"}]])
+            return
+        lines = [f"<b>{html.escape(category.title())}</b>", "Выберите позицию. Оплата и оформление проходят в Mini App.", ""]
+        buttons: list[list[dict[str, Any]]] = []
+        for product in selected:
+            for variant in product.get("variants", []):
+                if not variant.get("active", True):
+                    continue
+                lines.append(f"<b>{html.escape(str(product.get('title') or 'Товар'))}</b> — {_variant_label(product, variant)}")
+                buttons.append([_variant_webapp_button(f"Купить · {variant.get('title', 'товар')}", variant, self._cfg.webapp_url)])
+        buttons.extend(([{"text": "↩️ Категории", "callback_data": "store"}],))
+        await self._t.send_message(chat_id, "\n".join(lines), buttons)
+
     # ── /store: Core catalog, with every buy action in shared Mini App ──
     async def handle_store(self, user: BotUser) -> None:
         try:
