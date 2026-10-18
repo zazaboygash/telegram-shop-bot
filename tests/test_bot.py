@@ -58,6 +58,16 @@ def _bot() -> tuple[GashBot, FakeTelegramTransport]:
     return GashBot(t, FakeCore(), cfg), t
 
 
+def test_start_menu_has_in_chat_funnel_and_separate_mini_app() -> None:
+    bot, t = _bot()
+    asyncio.run(bot.handle_start(BotUser(chat_id=1, gash_token="tok", display_name="D", language_code="ru")))
+    flat = [button for row in t.sent[0].buttons for button in row]
+    assert any(button.get("callback_data") == "store" for button in flat)
+    assert any(button.get("callback_data") == "profile" for button in flat)
+    assert any("web_app" in button for button in flat)
+    assert any(button.get("callback_data") == "faq" for button in flat)
+
+
 def test_start_menu_renders_startapp_deeplinks() -> None:
     bot, t = _bot()
     user = BotUser(chat_id=1, gash_token="tok", display_name="D")
@@ -65,9 +75,9 @@ def test_start_menu_renders_startapp_deeplinks() -> None:
     assert "Gash's Lair" in t.sent[0].text
     flat = [b for row in t.sent[0].buttons for b in row]
     by_text = {b["text"]: b for b in flat}
-    assert by_text["Open Gash"]["web_app"]["url"] == "https://dev-app.example/"  # canonical Home
-    assert by_text["Store"]["web_app"]["url"] == "https://dev-app.example/store"
-    assert by_text["Support"]["url"].startswith("https://")
+    assert by_text["🟢 Open Mini App"]["web_app"]["url"] == "https://dev-app.example/"  # canonical Home
+    assert by_text["🛍 Store"]["callback_data"] == "store"
+    assert by_text["💬 Support"]["callback_data"] == "support"
 
 
 def test_route_contract_matches_frontend() -> None:

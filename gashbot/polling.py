@@ -63,6 +63,27 @@ async def main() -> None:
             continue
         for update in updates:
             offset = max(offset, update["update_id"] + 1)
+            callback = update.get("callback_query")
+            if callback:
+                chat_id = callback["message"]["chat"]["id"]
+                callback_data = callback.get("data", "")
+                await transport.answer_callback(callback["id"])
+                if callback_data == "store":
+                    await bot.handle_store(BotUser(chat_id=chat_id, gash_token="", display_name=""))
+                elif callback_data == "profile":
+                    await bot.handle_profile(chat_id)
+                elif callback_data == "support":
+                    await bot.handle_support(chat_id)
+                elif callback_data == "faq":
+                    await bot.handle_faq(chat_id)
+                elif callback_data == "rules":
+                    await bot.handle_rules(chat_id)
+                elif callback_data == "language":
+                    await bot.handle_language(chat_id)
+                elif callback_data in {"lang_ru", "lang_en"}:
+                    lang = "Русский" if callback_data == "lang_ru" else "English"
+                    await transport.send_message(chat_id, f"Язык выбран: {lang} / Language selected: {lang}", bot._menu_buttons("ru" if callback_data == "lang_ru" else "en"))
+                continue
             msg = update.get("message")
             if not msg:
                 continue

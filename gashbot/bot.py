@@ -171,14 +171,30 @@ class GashBot:
         self._core = core
         self._cfg = config
 
-    def _menu_buttons(self) -> list[list[dict[str, str]]]:
+    def _menu_buttons(self, language_code: str = "en") -> list[list[dict[str, Any]]]:
         b = self._cfg.webapp_url
+        ru = language_code.lower().startswith("ru")
         return [
-            [_webapp_button("Open Gash", "home", b)],
-            [_webapp_button("Store", "store", b), _webapp_button("VPN codes", "vpn", b)],
-            [_webapp_button("Orders", "orders", b), _webapp_button("Profile", "profile", b)],
-            [_url_button("Support", self._cfg.support_url)],
+            [_webapp_button("🟢 Открыть Mini App" if ru else "🟢 Open Mini App", "home", b)],
+            [{"text": "🛍 Товары" if ru else "🛍 Store", "callback_data": "store"},
+             {"text": "👤 Профиль" if ru else "👤 Profile", "callback_data": "profile"}],
+            [{"text": "💬 Поддержка" if ru else "💬 Support", "callback_data": "support"}],
+            [{"text": "🌐 Language / Язык", "callback_data": "language"}],
+            [{"text": "📄 Правила" if ru else "📄 Rules", "callback_data": "rules"},
+             {"text": "❓ FAQ", "callback_data": "faq"}],
         ]
+
+    async def handle_support(self, chat_id: int) -> None:
+        await self._t.send_message(chat_id, "Поддержка ответит в этом чате. Для заказа и оплаты используйте Mini App.", [[_url_button("Написать в поддержку", self._cfg.support_url)]])
+
+    async def handle_faq(self, chat_id: int) -> None:
+        await self._t.send_message(chat_id, "FAQ\n\nТовары — кнопка «Товары».\nОплата — только внутри Mini App.\nЗаказ и выдача — раздел «Профиль» и «Заказы».\nПромокод показывается только после подтверждённой выдачи Core.", [[{"text": "🛍 Товары", "callback_data": "store"}, {"text": "👤 Профиль", "callback_data": "profile"}]])
+
+    async def handle_rules(self, chat_id: int) -> None:
+        await self._t.send_message(chat_id, "Правила магазина\n\nЦены и наличие берутся из Gash Core. Оплата проходит только в Mini App. Не отправляйте пароли, коды или платёжные данные в чат.", [[_webapp_button("Открыть Mini App", "home", self._cfg.webapp_url)]])
+
+    async def handle_language(self, chat_id: int) -> None:
+        await self._t.send_message(chat_id, "Выберите язык / Choose language", [[{"text": "Русский", "callback_data": "lang_ru"}, {"text": "English", "callback_data": "lang_en"}]])
 
     # ── /start ───────────────────────────────────────────────────────────
     async def handle_start(self, user: BotUser) -> None:
@@ -186,7 +202,7 @@ class GashBot:
             text = "Добро пожаловать в Gash's Lair\nVPN · Магазин · 2FA · Сервисы"
         else:
             text = "Welcome to Gash's Lair\nVPN · Store · 2FA · Services"
-        await self._t.send_message(user.chat_id, text, self._menu_buttons())
+        await self._t.send_message(user.chat_id, text, self._menu_buttons(user.language_code))
 
     # ── /store: Core catalog, with every buy action in shared Mini App ──
     async def handle_store(self, user: BotUser) -> None:
