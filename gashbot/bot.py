@@ -109,7 +109,8 @@ class GashBot:
         return [
             [_webapp_button("Open Gash", "home", b)],
             [_webapp_button("Store", "store", b), _webapp_button("VPN", "vpn", b)],
-            [_webapp_button("Orders", "orders", b), _url_button("Support", self._cfg.support_url)],
+            [_webapp_button("Orders", "orders", b), _webapp_button("Profile", "profile", b)],
+            [_url_button("Support", self._cfg.support_url)],
         ]
 
     # ── /start ───────────────────────────────────────────────────────────
